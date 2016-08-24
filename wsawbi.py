@@ -4,6 +4,7 @@ import readline, glob
 import fortranformat as form
 import numpy as np
 import math
+import pdb
 
 def get(prompt, default):
     return raw_input("%s [%s] " % (prompt, default)) or default
@@ -15,52 +16,6 @@ def init_tab_complete():
     readline.set_completer_delims(' \t\n;')
     readline.parse_and_bind("tab: complete")
     readline.set_completer(complete)
-
-class Nucleus():
-    def __init__(self,A,Z,J,Pi,T):
-        self.A = A
-        self.Z = Z
-        self.J = J
-        self.Parity = Pi
-        self.T = T
-        self.Tz = (A-2.0*Z)/2.0
-
-class FOLDInstance():
-    def __init__(self):
-        #self.Projectile = Nucleus(A,Z,J,Pi,T,Tz)
-        self.temp = 0
-    def SetProjectile(self,A,Z,J,Pi,T):
-        self.Projectile = Nucleus(A,Z,J,Pi,T)
-    def SetTarget(self,A,Z,J,Pi,T):
-        self.Target = Nucleus(A,Z,J,Pi,T)
-    def SetEjectile(self,A,Z,J,Pi,T):
-        self.Ejectile = Nucleus(A,Z,J,Pi,T)
-    def SetResidual(self,A,Z,J,Pi,T):
-        self.Residual = Nucleus(A,Z,J,Pi,T)
-
-
-
-
-
-def parse_obtd(obtd_filename):
-    try:
-        obtd_file = open(obtd_filename,"rb")
-    except IOError:
-        print "Error, file does not exist"; exit()
-    obtd_list = []
-    for i,line in enumerate(obtd_file):        
-        if 'ai <-> af' in line:
-            line = line.split()
-            print int(line[6]),int(line[8])
-        if 'ji <-> jf' in line:
-            line = line.split()
-            print line[6],line[8]
-        if 'ti <-> tf' in line:
-            line = line.split()
-            print line[6],line[8]
-        if 'pi <-> pf' in line:
-            line = line.split()
-            print line[6],line[8]
 
 def parse_dens(initialdens,finaldens):
     try:
@@ -113,9 +68,68 @@ def parse_dens(initialdens,finaldens):
             valence_nucleon_final.append(line.split())
         if final_nucleon+' bound state results' in line:
             sp_lines = True
-    print valence_nucleon_final
+    # print "initial valence nucleon: "
+    # for line in valence_nucleon_initial:
+    #     print line
+    # print "final valence nucleon: "
+    # for line in valence_nucleon_final:
+    #     print line
+    #return valence_nucleon_initial,valence_nucleon_final
+    write_sp_levels(valence_nucleon_initial,ai,zi,initial_nucleon)
+    write_sp_levels(valence_nucleon_final,af,zf,final_nucleon)
+
+
+def write_sp_levels(levels_list,a,z,valence):
+    corez = 0
+    if valence == 'proton':
+        corez = z - 1
+    else:
+        corez = z
+    for i,lvl in enumerate(levels_list):
+        if i == 1:
+            continue # first line contains indices
+        if len(lvl)==0:
+            continue
+        if len(lvl) != 9:
+            print "Error in sp levels, bad level: ", lvl
+            continue
+        print i,lvl
+        #line = form.FortranRecordWriter('(7F10.2,I2)')
+        line = form.FortranRecordWriter('(F10.3,2F10.0,3F10.2,F10.1,I2)')
+        line = line.write([a-1,corez,60.,0.65,1.25,1.25,7.0])
+        file.write(line+'\n')
+        line = form.FortranRecordWriter('(7F10.2,I2)')
+        ebind = float(lvl[4])
+        if ebind == -0.2:
+            ebind = 1.0
+        orbital_ang = lvl[2]
+        if orbital_ang == 's':
+            orbital_ang = 0
+        elif orbital_ang == 'p':
+            orbital_ang = 1
+        elif orbital_ang == 'd':
+            orbital_ang = 2
+        elif orbital_ang == 'f':
+            orbital_ang = 3
+        elif orbital_ang == 'g':
+            orbital_ang = 4
+        elif orbital_ang == 'h':
+            orbital_ang = 5
+        else:
+            print "error determinging orbital angular momentum: ", orbital_ang
+            exit()
+        ebind = abs(ebind)
+
+        j = lvl[3]
+        j = float(j[:-2])/float(j[len(j)-1])
+        line = line.write([ebind, 1, orbital_ang, float(lvl[1])-1, 1 if valence == 'proton' else 0, j, 0.5])
+        file.write(line+'\n')
+
+
+
 
 if __name__=="__main__":
+    #pdb.set_trace()
     init_tab_complete()
     #parse_obtd('t331dp150.obd')
 
@@ -125,35 +139,30 @@ if __name__=="__main__":
     #FOLD.SetTarget(9,4,1.5,-1,0.5)
     #FOLD.SetResidual(9,5,1.5,-1,0.5)
 
-    
-    projdens = get("Enter path for dens projectile file from oxbash/nushell","13b-dens.dao")
-    finaldens = get("Enter path for dens projectile file from oxbash/nushell","13be-dens.dao")
-    data = parse_dens(projdens,finaldens)
-    exit()
-
     filename = get("Enter a name for the WSAW input file to be generated","wsaw.inp")
-    file = open(filename,"wb")    
-    djr = 0.0 # Change of relative spin
-    djp = 0.0 # Change of spin in projectile
-    djt = 0.0 # Change of spin in target
+    file = open(filename,"wb")
 
     ################### Line 1 ###################
 
-    output_file = \
-        get("Enter a filename for the FOLD output file.\nNote that this filename is restricted to 8 characters or less","FOLDOUT")    
-    line = form.FortranRecordWriter('(I5,I5,A7)')
-    line = line.write([1,1,output_file[0:8]])
+    line = form.FortranRecordWriter('(A10,A10,3I5)')
+    line = line.write([0.1,20.,1,150,0])
     file.write(line+'\n')
 
     ################### Line 2 ###################
-
-    nr = int(get("Number of integration steps:\n",600))
-    ns = float(get("Step size (fm):\n",0.03))
-    beam_energy_lab = float(get("Bombarding energy (MeV):\n",1000.))
-    a = float(get("Projectile mass number (A):\n",12))
-    line = form.FortranRecordWriter('(I5,F5.2,F10.0,F10.0,I10,I4,I4)')
-    line = line.write([nr,ns,beam_energy_lab,a,1,1,1])
+    output_file = \
+        get("Enter a filename for the WSAW output file.\nNote that this filename is restricted to 8 characters or less","B13BE13")
+    if len(output_file) > 8:
+        print "Output WSAW filename is > 8 characters"
+        exit()
+    line = form.FortranRecordWriter('(A' + str(len(output_file))+ ')')
+    line = line.write([output_file[0:8]])
     file.write(line+'\n')
 
+    ################### Line 3-EOF ###################
+    projdens = get("Enter path for dens projectile file from oxbash/nushell","13b-dens.dao")
+    finaldens = get("Enter path for dens ejectile file from oxbash/nushell","13be-dens.dao")
+    parse_dens(projdens,finaldens)
 
-    
+    line = form.FortranRecordWriter('(I2)')
+    line = line.write([-1])
+    file.write(line)
